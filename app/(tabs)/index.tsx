@@ -1,29 +1,33 @@
 import React from 'react';
-import { StyleSheet, SafeAreaView, View } from 'react-native';
+import { StyleSheet, SafeAreaView, View, StatusBar, Platform } from 'react-native';
 import NoZoomWebView from '../../components/NoZoomWebView';
 
 export default function HomeScreen() {
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <View style={styles.container}>
-        <NoZoomWebView
-          style={styles.webview}
-          source={{ uri: 'https://app.topsteptrader.com/dashboard' }}
-          originWhitelist={['*']}
-          javaScriptEnabled={true}
-          domStorageEnabled={true}
-          allowsInlineMediaPlayback={true}
-          mediaPlaybackRequiresUserAction={false}
-        />
-      </View>
-    </SafeAreaView>
+    <>
+      <StatusBar barStyle="dark-content" backgroundColor="#fff" />
+      <SafeAreaView style={styles.safeArea}>
+        <View style={styles.container}>
+          <NoZoomWebView
+            style={styles.webview}
+            source={{ uri: 'https://app.topsteptrader.com/dashboard' }}
+            originWhitelist={['*']}
+            javaScriptEnabled={true}
+            domStorageEnabled={true}
+            allowsInlineMediaPlayback={true}
+            mediaPlaybackRequiresUserAction={false}
+          />
+        </View>
+      </SafeAreaView>
+    </>
   );
 }
 
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#fff', // or any color that matches your app's theme
+    backgroundColor: '#fff',
+    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
   },
   container: {
     flex: 1,
