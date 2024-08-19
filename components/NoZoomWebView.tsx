@@ -18,6 +18,8 @@ const injectedJavaScript = `
     }
   }, true);
 
+  let previousChildCount = 0;
+
   function findToastifyContainer() {
     return document.querySelector('.Toastify');
   }
@@ -27,24 +29,14 @@ const injectedJavaScript = `
     if (container) {
       console.log('Toastify container found and being observed');
       const observer = new MutationObserver(function(mutations) {
-        console.log('Mutation detected in Toastify container');
-        for (let mutation of mutations) {
-          if (mutation.type === 'childList') {
-            const addedNodes = Array.from(mutation.addedNodes);
-            const hasNewToast = addedNodes.some(node => 
-              node.nodeType === Node.ELEMENT_NODE && 
-              (node.classList.contains('Toastify__toast') || node.querySelector('.Toastify__toast'))
-            );
-            if (hasNewToast) {
-              console.log('New toast detected');
-              window.ReactNativeWebView.postMessage('newToastAdded');
-              return;
-            }
-          }
+        const currentChildCount = container.children.length;
+        if (currentChildCount > 0 && previousChildCount === 0) {
+          console.log('Toastify children count changed from 0 to:', currentChildCount);
+          window.ReactNativeWebView.postMessage('toastifyChildrenBecameNonZero');
         }
-        console.log('Mutation did not contain new toast');
+        previousChildCount = currentChildCount;
       });
-      observer.observe(container, { childList: true, subtree: true });
+      observer.observe(container, { childList: true });
     } else {
       console.log('Toastify container not found');
     }
@@ -55,13 +47,9 @@ const injectedJavaScript = `
 
   // Set up a MutationObserver for the entire body to catch if the container is added dynamically
   const bodyObserver = new MutationObserver(function(mutations) {
-    console.log('Body mutation detected, checking for Toastify container');
     if (findToastifyContainer()) {
-      console.log('Toastify container found after body mutation');
       bodyObserver.disconnect();
       observeToastifyContainer();
-    } else {
-      console.log('Toastify container still not found after body mutation');
     }
   });
   bodyObserver.observe(document.body, { childList: true, subtree: true });
@@ -97,8 +85,7 @@ const NoZoomWebView: React.FC<WebViewProps> = (props) => {
   const handleMessage = (event: WebViewMessageEvent) => {
     const message = event.nativeEvent.data;
     console.log('Received message from WebView:', message);
-    if (message === 'newToastAdded') {
-      console.log('Preparing to send notification for new toast');
+    if (message === 'toastifyChildrenBecameNonZero') {
       sendNotification();
     }
   };
