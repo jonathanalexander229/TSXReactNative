@@ -1,71 +1,106 @@
-import React, { useState, useRef } from 'react';
-import { WebView, WebViewProps, WebViewMessageEvent, WebViewNavigation } from 'react-native-webview';
+import React, { useState, useEffect, useRef } from 'react';
+import { WebView, WebViewProps, WebViewMessageEvent } from 'react-native-webview';
 import { StyleSheet, View } from 'react-native';
-import RequestsView from './RequestsView';
+import * as Notifications from 'expo-notifications';
 
-const monitoringScript = `
+const injectedJavaScript = `
 (function() {
-  var observer = new MutationObserver(function(mutations) {
-    window.ReactNativeWebView.postMessage(JSON.stringify({
-      type: 'domChange',
-      data: mutations.length + ' changes'
-    }));
+  // Prevent zooming on input fields
+  var meta = document.createElement('meta');
+  meta.name = 'viewport';
+  meta.content = 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no';
+  document.getElementsByTagName('head')[0].appendChild(meta);
+
+  // Disable zooming on input focus
+  document.addEventListener('focus', function(event) {
+    if (event.target.tagName === 'INPUT' || event.target.tagName === 'TEXTAREA') {
+      event.target.style.fontSize = '16px';
+    }
+  }, true);
+
+  function findToastifyContainer() {
+    return document.querySelector('.Toastify');
+  }
+
+  function observeToastifyContainer() {
+    const container = findToastifyContainer();
+    if (container) {
+      console.log('Toastify container found and being observed');
+      const observer = new MutationObserver(function(mutations) {
+        console.log('Mutation detected in Toastify container');
+        for (let mutation of mutations) {
+          if (mutation.type === 'childList') {
+            const addedNodes = Array.from(mutation.addedNodes);
+            const hasNewToast = addedNodes.some(node => 
+              node.nodeType === Node.ELEMENT_NODE && 
+              (node.classList.contains('Toastify__toast') || node.querySelector('.Toastify__toast'))
+            );
+            if (hasNewToast) {
+              console.log('New toast detected');
+              window.ReactNativeWebView.postMessage('newToastAdded');
+              return;
+            }
+          }
+        }
+        console.log('Mutation did not contain new toast');
+      });
+      observer.observe(container, { childList: true, subtree: true });
+    } else {
+      console.log('Toastify container not found');
+    }
+  }
+
+  // Initial check
+  observeToastifyContainer();
+
+  // Set up a MutationObserver for the entire body to catch if the container is added dynamically
+  const bodyObserver = new MutationObserver(function(mutations) {
+    console.log('Body mutation detected, checking for Toastify container');
+    if (findToastifyContainer()) {
+      console.log('Toastify container found after body mutation');
+      bodyObserver.disconnect();
+      observeToastifyContainer();
+    } else {
+      console.log('Toastify container still not found after body mutation');
+    }
   });
-  observer.observe(document.body, { childList: true, subtree: true });
+  bodyObserver.observe(document.body, { childList: true, subtree: true });
 
-  // Intercept console.log calls
-  var originalConsoleLog = console.log;
-  console.log = function() {
-    var args = Array.from(arguments);
-    window.ReactNativeWebView.postMessage(JSON.stringify({
-      type: 'consoleLog',
-      data: args.join(' ')
-    }));
-    originalConsoleLog.apply(console, args);
-  };
-
-  true; // note: this is required, or you'll sometimes get silent failures
+  console.log('Injection script completed');
+  true;
 })();
 `;
 
 const NoZoomWebView: React.FC<WebViewProps> = (props) => {
-  const [events, setEvents] = useState<string[]>([]);
   const webViewRef = useRef<WebView>(null);
 
-  const handleMessage = (event: WebViewMessageEvent) => {
-    try {
-      const message = event.nativeEvent.data;
-      let parsedMessage;
-      try {
-        parsedMessage = JSON.parse(message);
-      } catch (jsonError) {
-        // If it's not JSON, treat it as a plain string
-        parsedMessage = { type: 'unknown', data: message };
-      }
+  useEffect(() => {
+    Notifications.setNotificationHandler({
+      handleNotification: async () => ({
+        shouldShowAlert: true,
+        shouldPlaySound: false,
+        shouldSetBadge: false,
+      }),
+    });
+  }, []);
 
-      const { type, data } = parsedMessage;
-      let formattedMessage = '';
-      switch (type) {
-        case 'domChange':
-          formattedMessage = `DOM Change: ${data}`;
-          break;
-        case 'consoleLog':
-          formattedMessage = `Console: ${data}`;
-          break;
-        default:
-          formattedMessage = `Unknown: ${JSON.stringify(data)}`;
-      }
-      setEvents(prevEvents => [...prevEvents, formattedMessage].slice(-50)); // Keep last 50 events
-    } catch (error) {
-      console.error('Failed to handle message:', error);
-    }
+  const sendNotification = async () => {
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title: "New Toast Notification",
+        body: "A new toast has been added.",
+      },
+      trigger: null,
+    });
   };
 
-  const onShouldStartLoadWithRequest = (event: WebViewNavigation) => {
-    const { url, method, headers } = event;
-    const requestInfo = `${method} ${url}\nHeaders: ${JSON.stringify(headers)}`;
-    setEvents(prevEvents => [...prevEvents, requestInfo].slice(-50)); // Keep last 50 events
-    return true; // Allow the request to proceed
+  const handleMessage = (event: WebViewMessageEvent) => {
+    const message = event.nativeEvent.data;
+    console.log('Received message from WebView:', message);
+    if (message === 'newToastAdded') {
+      console.log('Preparing to send notification for new toast');
+      sendNotification();
+    }
   };
 
   return (
@@ -73,21 +108,13 @@ const NoZoomWebView: React.FC<WebViewProps> = (props) => {
       <WebView
         {...props}
         ref={webViewRef}
-        injectedJavaScript={monitoringScript}
+        injectedJavaScript={injectedJavaScript}
         style={styles.webview}
-        scalesPageToFit={false}
         onMessage={handleMessage}
-        onShouldStartLoadWithRequest={onShouldStartLoadWithRequest}
         javaScriptEnabled={true}
         domStorageEnabled={true}
-        allowsBackForwardNavigationGestures={false}
-        allowsLinkPreview={false}
-        cacheEnabled={true}
-        cacheMode="LOAD_DEFAULT"
-        incognito={false}
-        applicationNameForUserAgent="TopStep"
+        scalesPageToFit={false}
       />
-      {/* <RequestsView events={events} /> */}
     </View>
   );
 };
