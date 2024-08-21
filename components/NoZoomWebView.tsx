@@ -2,6 +2,10 @@ import React, { useState, useEffect, useRef } from 'react';
 import { WebView, WebViewProps, WebViewMessageEvent } from 'react-native-webview';
 import { StyleSheet, View } from 'react-native';
 import * as Notifications from 'expo-notifications';
+import * as BackgroundFetch from 'expo-background-fetch';
+import * as TaskManager from 'expo-task-manager';
+
+const BACKGROUND_FETCH_TASK = 'background-fetch';
 
 const injectedJavaScript = `
 (function() {
@@ -54,10 +58,29 @@ const injectedJavaScript = `
   });
   bodyObserver.observe(document.body, { childList: true, subtree: true });
 
+  // Add a function to check for notifications
+  window.checkForNotifications = function() {
+    const container = document.querySelector('.Toastify');
+    if (container && container.children.length > 0) {
+      window.ReactNativeWebView.postMessage('toastifyChildrenBecameNonZero');
+    }
+  };
+
+  // Call checkForNotifications periodically
+  setInterval(window.checkForNotifications, 5000);
+
   console.log('Injection script completed');
   true;
 })();
 `;
+
+TaskManager.defineTask(BACKGROUND_FETCH_TASK, async () => {
+  const webViewRef = global.webViewRef;
+  if (webViewRef) {
+    webViewRef.injectJavaScript('window.checkForNotifications()');
+  }
+  return BackgroundFetch.BackgroundFetchResult.NewData;
+});
 
 const NoZoomWebView: React.FC<WebViewProps> = (props) => {
   const webViewRef = useRef<WebView>(null);
@@ -70,7 +93,26 @@ const NoZoomWebView: React.FC<WebViewProps> = (props) => {
         shouldSetBadge: false,
       }),
     });
+
+    registerBackgroundFetch();
+
+    return () => {
+      BackgroundFetch.unregisterTaskAsync(BACKGROUND_FETCH_TASK);
+    };
   }, []);
+
+  const registerBackgroundFetch = async () => {
+    try {
+      await BackgroundFetch.registerTaskAsync(BACKGROUND_FETCH_TASK, {
+        minimumInterval: 60 * 15, // 15 minutes
+        stopOnTerminate: false,
+        startOnBoot: true,
+      });
+      console.log("Background fetch registered");
+    } catch (err) {
+      console.log("Background fetch failed to register");
+    }
+  };
 
   const sendNotification = async () => {
     await Notifications.scheduleNotificationAsync({
@@ -94,7 +136,10 @@ const NoZoomWebView: React.FC<WebViewProps> = (props) => {
     <View style={styles.container}>
       <WebView
         {...props}
-        ref={webViewRef}
+        ref={(ref) => {
+          webViewRef.current = ref;
+          global.webViewRef = ref;
+        }}
         injectedJavaScript={injectedJavaScript}
         style={styles.webview}
         onMessage={handleMessage}

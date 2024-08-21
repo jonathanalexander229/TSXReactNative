@@ -14,7 +14,10 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.anonymous.TSXReactNativeApp"
+      "bundleIdentifier": "com.anonymous.TSXReactNativeApp",
+      "infoPlist": {
+        "UIBackgroundModes": ["remote-notification", "fetch"]
+      }
     },
     "android": {
       "adaptiveIcon": {

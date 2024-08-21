@@ -8,6 +8,7 @@ import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 
 import { useColorScheme } from '@/hooks/useColorScheme';
+import { registerForPushNotificationsAsync } from './notificationSetup';
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
@@ -31,6 +32,10 @@ export default function RootLayout() {
       SplashScreen.hideAsync();
     }
   }, [loaded]);
+
+  useEffect(() => {
+    registerForPushNotificationsAsync().then(token => console.log(token));
+  }, []);
 
   useEffect(() => {
     async function setupNotifications() {
